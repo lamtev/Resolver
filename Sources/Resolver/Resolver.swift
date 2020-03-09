@@ -425,39 +425,27 @@ public final class ResolverScopeGraph: ResolverScope {
     private let syncQueue = DispatchQueue(label: "resolver.ResolverScopeGraph.syncQueue.serial", qos: .userInitiated)
     private var graph = [String : Any?](minimumCapacity: 32)
     private var resolutionDepth = 0
-    private var mutex = pthread_mutex_t()
-
-    fileprivate init() {
-        pthread_mutex_init(&mutex, nil)
-    }
 
     public final func resolve<Service>(resolver: Resolver, registration: ResolverRegistration<Service>, args: Any?) -> Service? {
-        pthread_mutex_lock(&mutex)
-
-        let existingService = graph[registration.cacheKey] as? Service
-
-        if let service = existingService {
-            pthread_mutex_unlock(&mutex)
-            return service
+        var s: Service?
+        syncQueue.sync {
+            s = self.graph[registration.cacheKey] as? Service
+            if s == nil { self.resolutionDepth += 1 }
         }
-
-        resolutionDepth = resolutionDepth + 1
-
-        pthread_mutex_unlock(&mutex)
+        if let existingService = s {
+            return existingService
+        }
 
         let service = registration.resolve(resolver: resolver, args: args)
+        syncQueue.sync {
+            self.resolutionDepth -= 1
 
-        pthread_mutex_lock(&mutex)
-
-        resolutionDepth = resolutionDepth - 1
-
-        if resolutionDepth == 0 {
-            graph.removeAll()
-        } else if let service = service, type(of: service as Any) is AnyClass {
-            graph[registration.cacheKey] = service
+            if self.resolutionDepth == 0 {
+                self.graph.removeAll()
+            } else if let service = service, type(of: service as Any) is AnyClass {
+                self.graph[registration.cacheKey] = service
+            }
         }
-
-        pthread_mutex_unlock(&mutex)
 
         return service
     }
