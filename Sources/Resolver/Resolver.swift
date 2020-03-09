@@ -582,7 +582,7 @@ private final class Sync<T: Collection> {
         set { syncQueue.async(flags: .barrier) { self._wrappedValue = newValue } }
     }
 
-    var projectedValue: Sync<T> { return self }
+    var projectedValue: Sync<T> { self }
 
     init(wrappedValue: T) {
         _wrappedValue = wrappedValue
